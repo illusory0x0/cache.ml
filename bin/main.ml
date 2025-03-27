@@ -4,6 +4,33 @@ module List = struct
   type (_, _) t = Nil : ('a, 'b) t
 end
 
+(* 
+  This implementation is adapted from `https://github.com/illusory0x0/canvas.mbt/tree/master/src/cache`
+
+
+  Cache.t = {
+    mutable cache : 'a;
+    init : unit -> 'a;
+    mutable children : 'a t list; (* if A depend on B then A is B of child *)
+    mutable co_children : 'a t list;
+    mutable refresh : unit -> unit;
+  }
+
+  State.t = { 
+    mutable value : 'a; 
+    mutable children : 'a Cache.children 
+  }
+
+  If we remove `co_children`, `refresh`, `init` field from Cache.t and then rename `cache` to `value`. 
+  You get State.t, actually you can use `newtype State.t = Cache.t` to implement State.t. 
+  Traverse dependency tree where State.t not as NIL, treat it as Leaf Node, but provide type safe  function to modify state,
+
+  Warning! Don't use state.refresh to update state itself and its children, 
+  just simplify modify state's value and use `refresh_children` to refresh children's cache.
+  `init` is immutable, so this implementation is very pure functional programming (:
+
+*)
+
 module Cache = struct
   let do_nothing () = ()
 
@@ -68,11 +95,7 @@ module Cache = struct
 end
 
 module State = struct
-  type 'a t = { 
-    mutable value : 'a;
-     mutable children : 'a Cache.children;
-     mutable co_children : 'a Cache.children 
-    }
+  type 'a t = { mutable value : 'a; mutable children : 'a Cache.children }
 
   let pp (ppv : Format.formatter -> 'a -> unit) (ppf : Format.formatter)
       (self : 'a t) =
@@ -87,7 +110,7 @@ module State = struct
   let require_by self other = self.children <- other :: self.children
   let modify self f = set self (f self.value)
   let depend_on self other = require_by other self
-  let make value = { value; children = []; co_children = [] }
+  let make value = { value; children = [] }
 end
 
 module Test = struct
