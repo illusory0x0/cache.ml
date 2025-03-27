@@ -1,0 +1,6 @@
+(executable
+ (public_name cache)
+ (name main)
+ (libraries cache)
+ (preprocess
+  (pps js_of_ocaml-ppx ppx_deriving.show)))
