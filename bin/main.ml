@@ -12,7 +12,8 @@ module Cache = struct
   and 'a t = {
     mutable cache : 'a;
     init : unit -> 'a;
-    mutable children : 'a t list;
+    mutable children : 'a t list; (* if A depend on B then A is B of child *)
+    mutable co_children : 'a t list;
     mutable refresh : unit -> unit;
   }
 
@@ -28,10 +29,27 @@ module Cache = struct
         x.refresh ();
         refresh_children xs
 
+  let rec height : type a. a t -> int =
+   fun self ->
+    let rec go : type a. a t list -> int -> int =
+     fun xs acc ->
+      match xs with [] -> acc | x :: xs -> go xs (Int.max (height x + 1) acc)
+    in
+    go self.co_children 1
+  (* 'a State.t is NIL, neither Internal Node nor Leaf Node *)
+
   let refresh self = refresh_children self.children
 
   let from_fun (init : unit -> 'a) : 'a t =
-    let self = { cache = init (); init; children = []; refresh = do_nothing } in
+    let self =
+      {
+        cache = init ();
+        init;
+        children = [];
+        refresh = do_nothing;
+        co_children = [];
+      }
+    in
     let _ =
       self.refresh <-
         (fun () ->
@@ -41,12 +59,20 @@ module Cache = struct
     self
 
   let from_val value = from_fun (fun () -> value)
-  let require_by self other = self.children <- other :: self.children
+
+  let require_by self other =
+    self.children <- other :: self.children;
+    other.co_children <- self :: other.children
+
   let depend_on self other = require_by other self
 end
 
 module State = struct
-  type 'a t = { mutable value : 'a; mutable children : 'a Cache.children }
+  type 'a t = { 
+    mutable value : 'a;
+     mutable children : 'a Cache.children;
+     mutable co_children : 'a Cache.children 
+    }
 
   let pp (ppv : Format.formatter -> 'a -> unit) (ppf : Format.formatter)
       (self : 'a t) =
@@ -61,13 +87,14 @@ module State = struct
   let require_by self other = self.children <- other :: self.children
   let modify self f = set self (f self.value)
   let depend_on self other = require_by other self
-  let make value = { value; children = Cache.[] }
+  let make value = { value; children = []; co_children = [] }
 end
 
 module Test = struct
   type t = Lit of int State.t | Add of int Cache.t
   [@@deriving show { with_path = false }]
 
+  let fromAdd = function Add x -> x | _ -> panic ()
   let lit v = Lit v
 
   let add x y =
@@ -127,6 +154,10 @@ module Test = struct
     ppln expr;
     State.modify x (fun x -> x * x * x);
     ppln expr;
+    print_string "height: ";
+    print_int (fromAdd expr |> Cache.height);
+    print_newline ();
+
     print_newline ();
     ()
 end
@@ -144,6 +175,7 @@ module CacheOO = struct
       method required_by other = Cache.require_by repr other
       method cache = repr.cache
       method unwrap = repr
+      method height = Cache.height repr
     end
 
   class ['a] state (v : 'a) =
@@ -178,6 +210,7 @@ module Test_OO = struct
   [@@deriving show { with_path = false }]
 
   let lit v = Lit v
+  let fromAdd = function Add x -> x | _ -> panic ()
 
   let add x y =
     match (x, y) with
@@ -236,6 +269,8 @@ module Test_OO = struct
     ppln expr;
     x#modify (fun x -> x * x * x);
     ppln expr;
+    print_string "height: ";
+    print_int (fromAdd expr)#height;
     print_newline ();
     ()
 end
