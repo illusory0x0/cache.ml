@@ -112,6 +112,7 @@ module Test = struct
   let ( + ) = add
 
   let ex =
+    print_string "basic implentation";
     let x = State.make 3 in
     let y = State.make 5 in
     let z = State.make 8 in
@@ -126,6 +127,113 @@ module Test = struct
     ppln expr;
     State.modify x (fun x -> x * x * x);
     ppln expr;
-    (* print_int expr.  *)
+    ()
+end
+
+module CacheOO = struct
+  class virtual ['a] required_by =
+    object
+      method virtual required_by : 'a Cache.t -> unit
+    end
+
+  class ['a] cache (f : unit -> 'a) =
+    object
+      inherit ['a] required_by
+      val repr = Cache.from_fun f
+      method required_by other = Cache.require_by repr other
+      method cache = repr.cache
+      method unwrap = repr
+    end
+
+  class ['a] state (v : 'a) =
+    object
+      inherit ['a] required_by
+      val repr = State.make v
+      method required_by other = State.require_by repr other
+      method value = repr.value
+      method unwrap = repr
+      method modify = State.modify repr
+    end
+
+  let pp_state (ppv : Format.formatter -> 'a -> unit) (ppf : Format.formatter)
+      (self : 'a state) =
+    State.pp ppv ppf self#unwrap
+
+  let pp_cache (ppv : Format.formatter -> 'a -> unit) (ppf : Format.formatter)
+      (self : 'a cache) =
+    Cache.pp ppv ppf self#unwrap
+
+  let depend_on (self : 'a cache)
+      (other : < required_by : 'a Cache.t -> 'b ; .. >) : unit =
+    other#required_by self#unwrap
+
+  let ( >> ) = depend_on
+end
+
+module Test_OO = struct
+  open CacheOO
+
+  type t = Lit of int state | Add of int cache
+  [@@deriving show { with_path = false }]
+
+  let lit v = Lit v
+
+  let add x y =
+    match (x, y) with
+    | Lit x, Lit y ->
+        let cache =
+          new cache (fun _ ->
+              print_endline "case 1";
+              x#value + y#value)
+        in
+        cache >> x;
+        cache >> y;
+        Add cache
+    | Lit x, Add y ->
+        let cache =
+          new cache (fun _ ->
+              print_endline "case 2";
+              x#value + y#cache)
+        in
+        cache >> x;
+        cache >> y;
+        Add cache
+    | Add x, Lit y ->
+        let cache =
+          new cache (fun _ ->
+              print_endline "case 3";
+              x#cache + y#value)
+        in
+        cache >> x;
+        cache >> y;
+        Add cache
+    | Add x, Add y ->
+        let cache =
+          new cache (fun _ ->
+              print_endline "case 4";
+              x#cache + y#cache)
+        in
+        cache >> x;
+        cache >> y;
+        Add cache
+
+  let ( + ) = add
+
+  let ex =
+    print_string "OO implentation";
+    let x = new state 3 in
+    let y = new state 5 in
+    let z = new state 8 in
+    let w = new state 75 in
+
+    let expr = Lit x + Lit y + (Lit z + Lit w) in
+    let ppln expr =
+      pp Format.std_formatter expr;
+      Format.pp_print_newline Format.std_formatter ()
+    in
+
+    ppln expr;
+    x#modify (fun x -> x * x * x);
+    ppln expr;
     ()
 end
