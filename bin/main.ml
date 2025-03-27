@@ -112,7 +112,7 @@ module Test = struct
   let ( + ) = add
 
   let ex =
-    print_string "basic implentation";
+    print_endline "basic implentation";
     let x = State.make 3 in
     let y = State.make 5 in
     let z = State.make 8 in
@@ -127,6 +127,7 @@ module Test = struct
     ppln expr;
     State.modify x (fun x -> x * x * x);
     ppln expr;
+    print_newline ();
     ()
 end
 
@@ -220,7 +221,7 @@ module Test_OO = struct
   let ( + ) = add
 
   let ex =
-    print_string "OO implentation";
+    print_endline "OO implentation";
     let x = new state 3 in
     let y = new state 5 in
     let z = new state 8 in
@@ -235,5 +236,6 @@ module Test_OO = struct
     ppln expr;
     x#modify (fun x -> x * x * x);
     ppln expr;
+    print_newline ();
     ()
 end
