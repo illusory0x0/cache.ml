@@ -40,8 +40,7 @@ module Cache = struct
     mutable cache : 'a;
     init : unit -> 'a;
     mutable children : 'a t list; (* if A depend on B then A is B of child *)
-    mutable co_children : 'a t list;
-    mutable refresh : unit -> unit;
+    mutable co_children : 'a t list; (* mutable refresh : unit -> unit; *)
   }
 
   let pp (ppv : Format.formatter -> 'a -> unit) (ppf : Format.formatter)
@@ -50,10 +49,15 @@ module Cache = struct
 
   type 'a children = 'a t list
 
-  let rec refresh_children : type a. a list -> unit = function
+  let rec refresh : type a. a t -> unit =
+   fun self ->
+    self.cache <- self.init ();
+    refresh_children self.children
+
+  and refresh_children : type a. a list -> unit = function
     | [] -> ()
     | x :: xs ->
-        x.refresh ();
+        refresh x;
         refresh_children xs
 
   let rec height : type a. a t -> int =
@@ -65,25 +69,8 @@ module Cache = struct
     go self.co_children 1
   (* 'a State.t is NIL, neither Internal Node nor Leaf Node *)
 
-  let refresh self = refresh_children self.children
-
   let from_fun (init : unit -> 'a) : 'a t =
-    let self =
-      {
-        cache = init ();
-        init;
-        children = [];
-        refresh = do_nothing;
-        co_children = [];
-      }
-    in
-    let _ =
-      self.refresh <-
-        (fun () ->
-          self.cache <- self.init ();
-          refresh self)
-    in
-    self
+    { cache = init (); init; children = []; co_children = [] }
 
   let from_val value = from_fun (fun () -> value)
 
