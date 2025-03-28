@@ -1,9 +1,5 @@
 let panic () = failwith "panic"
 
-module List = struct
-  type (_, _) t = Nil : ('a, 'b) t
-end
-
 (* 
   This implementation is adapted from `https://github.com/illusory0x0/canvas.mbt/tree/master/src/cache`
 
@@ -48,6 +44,27 @@ module Cache = struct
     ppv ppf self.cache
 
   type 'a children = 'a t list
+  type flatten_type = (unit -> unit) List.t
+
+  (* let flatten : type a. a t -> flatten_type =
+   fun self ->
+    let f : type a. a t -> flatten_type -> flatten_type =
+     fun x acc ->
+      let refresh = fun _ -> x.cache <- x.init () in
+      List.cons refresh acc
+    in
+    let rec fold : type a. a t list -> flatten_type -> flatten_type =
+     fun lst acc -> match lst with [] -> acc | x :: xs -> fold xs (f x acc)
+    in
+    (fold self.children List.[]) |> List.rev  *)
+
+  let rec flatten : type a. a t -> flatten_type = 
+    fun self -> 
+      let refresh = fun _ -> self.cache <- self.init() in
+      List.cons refresh (flatten_children self.children) 
+  and flatten_children : type a. a list -> flatten_type = function
+  | [] -> List.([]) 
+  | x :: xs -> List.append (flatten x) (flatten_children xs)
 
   let rec refresh : type a. a t -> unit =
    fun self ->
@@ -82,22 +99,22 @@ module Cache = struct
 end
 
 module State = struct
-  type 'a t = { mutable value : 'a; mutable children : 'a Cache.children }
+  type 'a t = 'a Cache.t
 
   let pp (ppv : Format.formatter -> 'a -> unit) (ppf : Format.formatter)
       (self : 'a t) =
-    ppv ppf self.value
+    ppv ppf self.cache
 
-  let get self = self.value
+  let get (self : 'a t) = self.cache
 
-  let set self value =
-    self.value <- value;
+  let set (self : 'a t) value =
+    self.cache <- value;
     Cache.refresh_children self.children
 
-  let require_by self other = self.children <- other :: self.children
-  let modify self f = set self (f self.value)
+  let require_by (self : 'a t) other = self.children <- other :: self.children
+  let modify self f = set self (f self.cache)
   let depend_on self other = require_by other self
-  let make value = { value; children = [] }
+  let make cache : 'a t = Cache.from_val cache
 end
 
 module Test = struct
@@ -113,7 +130,7 @@ module Test = struct
         let cache =
           Cache.from_fun (fun _ ->
               print_endline "case 1";
-              x.value + y.value)
+              x.cache + y.cache)
         in
         State.depend_on cache x;
         State.depend_on cache y;
@@ -122,7 +139,7 @@ module Test = struct
         let cache =
           Cache.from_fun (fun _ ->
               print_endline "case 2";
-              x.value + y.cache)
+              x.cache + y.cache)
         in
         State.depend_on cache x;
         Cache.depend_on cache y;
@@ -131,7 +148,7 @@ module Test = struct
         let cache =
           Cache.from_fun (fun _ ->
               print_endline "case 3";
-              x.cache + y.value)
+              x.cache + y.cache)
         in
         Cache.depend_on cache x;
         State.depend_on cache y;
@@ -149,7 +166,7 @@ module Test = struct
   let ( + ) = add
 
   let ex =
-    print_endline "basic implentation";
+    print_endline "basic implementation";
     let x = State.make 3 in
     let y = State.make 5 in
     let z = State.make 8 in
@@ -162,7 +179,14 @@ module Test = struct
     in
 
     ppln expr;
-    State.modify x (fun x -> x * x * x);
+
+    (* flatten implementation *)
+    let refresh_list = Cache.flatten_children x.children in
+    x.cache <- x.cache * x.cache * x.cache;
+    List.iter (fun f -> f ()) refresh_list;
+
+
+    (* State.modify x (fun x -> x * x * x); *)
     ppln expr;
     print_string "height: ";
     print_int (fromAdd expr |> Cache.height);
@@ -193,7 +217,7 @@ module CacheOO = struct
       inherit ['a] required_by
       val repr = State.make v
       method required_by other = State.require_by repr other
-      method value = repr.value
+      method value = repr.cache
       method unwrap = repr
       method modify = State.modify repr
     end
@@ -264,7 +288,7 @@ module Test_OO = struct
   let ( + ) = add
 
   let ex =
-    print_endline "OO implentation";
+    print_endline "OO implementation";
     let x = new state 3 in
     let y = new state 5 in
     let z = new state 8 in
